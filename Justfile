@@ -339,6 +339,81 @@ _build-bib $target_image $tag $type $config: (_rootful_load_image target_image t
 # Example: just _rebuild-bib localhost/fedora latest qcow2 disk_config/disk.toml
 _rebuild-bib $target_image $tag $type $config: (build target_image tag) && (_build-bib target_image tag type config)
 
+# Build a bootc generic ISO using the unified Image Builder CLI.
+# ISO generation is intentionally separate from _build-bib, which remains
+# available for QCOW2/RAW images.
+_build-iso $target_image $tag: (_rootful_load_image target_image tag)
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    mkdir -p output/bootiso
+    sudo rm -f output/bootiso/install.iso
+
+    BUILDTMP=$(mktemp -p "${PWD}" -d -t _build-iso.XXXXXXXXXX)
+    trap 'sudo rm -rf "${BUILDTMP}"' EXIT
+
+    sudo podman run \
+      --rm \
+      -it \
+      --privileged \
+      --pull=newer \
+      --net=host \
+      --security-opt label=type:unconfined_t \
+      -v "${BUILDTMP}:/output" \
+      -v /var/lib/containers/storage:/var/lib/containers/storage \
+      ghcr.io/osbuild/image-builder-cli:latest \
+      build \
+      --bootc-ref localhost/baffos-installer:latest \
+      --bootc-default-fs btrfs \
+      --bootc-installer-payload-ref "${target_image}:${tag}" \
+      bootc-generic-iso
+
+    ISO_PATH=$(find "${BUILDTMP}" -type f -name '*.iso' -print -quit)
+    if [[ -z "${ISO_PATH}" ]]; then
+        echo "ERROR: image-builder completed without producing an ISO" >&2
+        exit 1
+    fi
+
+    sudo cp -f "${ISO_PATH}" output/bootiso/install.iso
+    sudo chown -R "$USER:$USER" output/bootiso
+
+    echo
+    echo "ISO generated:"
+    ls -lh output/bootiso/install.iso
+
+# Check that the BaffOS bootc image contains the boot assets expected by
+# bootc-generic-iso. The build tools themselves live in image-builder-cli.
+[group('Build ISO')]
+check-iso-prerequisites $target_image=("localhost/" + image_name) $tag=default_tag:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    podman run --rm "${target_image}:${tag}" bash -c '
+        set -e
+
+        kernel=$(find /usr/lib/modules -maxdepth 2 -type f -name vmlinuz -print -quit)
+        initramfs=$(find /usr/lib/modules -maxdepth 2 -type f -name initramfs.img -print -quit)
+
+        [[ -n "$kernel" ]] || { echo "MISSING: kernel vmlinuz under /usr/lib/modules" >&2; exit 1; }
+        [[ -n "$initramfs" ]] || { echo "MISSING: initramfs.img next to the kernel" >&2; exit 1; }
+
+        echo "Kernel:    $kernel"
+        echo "Initramfs: $initramfs"
+
+        test -f /usr/share/grub2/unicode.pf || { echo "MISSING: /usr/share/grub2/unicode.pf" >&2; exit 1; }
+        test -d /usr/lib/grub/i386-pc || { echo "MISSING: /usr/lib/grub/i386-pc" >&2; exit 1; }
+
+        efi=$(find /usr/lib/efi /boot/efi -maxdepth 6 -type f \
+          \( -name "shimx64.efi" -o -name "mmx64.efi" -o -name "gcdx64.efi" \) \
+          -print 2>/dev/null || true)
+        [[ -n "$efi" ]] || { echo "MISSING: expected EFI shim/grub binaries" >&2; exit 1; }
+
+        echo "EFI assets:"
+        printf "%s\n" "$efi"
+        echo
+        echo "bootc-generic-iso prerequisites look OK"
+    '
+
 # Build a QCOW2 virtual machine image
 [group('Build Virtal Machine Image')]
 build-qcow2 $target_image=("localhost/" + image_name) $tag=default_tag: && (_build-bib target_image tag "qcow2" "disk_config/disk.toml")
@@ -347,9 +422,9 @@ build-qcow2 $target_image=("localhost/" + image_name) $tag=default_tag: && (_bui
 [group('Build Virtal Machine Image')]
 build-raw $target_image=("localhost/" + image_name) $tag=default_tag: && (_build-bib target_image tag "raw" "disk_config/disk.toml")
 
-# Build an ISO virtual machine image
-[group('Build Virtal Machine Image')]
-build-iso $target_image=("localhost/" + image_name) $tag=default_tag: && (_build-bib target_image tag "iso" "disk_config/iso.toml")
+# Build an installer ISO from the already-built local BaffOS image
+[group('Build ISO')]
+build-iso $target_image=("localhost/" + image_name) $tag=default_tag: && (_build-iso target_image tag)
 
 # Rebuild a QCOW2 virtual machine image
 [group('Build Virtal Machine Image')]
@@ -359,9 +434,9 @@ rebuild-qcow2 $target_image=("localhost/" + image_name) $tag=default_tag: && (_r
 [group('Build Virtal Machine Image')]
 rebuild-raw $target_image=("localhost/" + image_name) $tag=default_tag: && (_rebuild-bib target_image tag "raw" "disk_config/disk.toml")
 
-# Rebuild an ISO virtual machine image
-[group('Build Virtal Machine Image')]
-rebuild-iso $target_image=("localhost/" + image_name) $tag=default_tag: && (_rebuild-bib target_image tag "iso" "disk_config/iso.toml")
+# Rebuild BaffOS and then generate the installer ISO
+[group('Build ISO')]
+rebuild-iso $target_image=("localhost/" + image_name) $tag=default_tag: (build target_image tag) && (_build-iso target_image tag)
 
 # Run a virtual machine with the specified image type and configuration
 _run-vm $target_image $tag $type $config:

@@ -15,6 +15,15 @@ sed -i '/^\[main\]/a max_parallel_downloads=10' /etc/dnf/dnf.conf
 ## System apps
 dnf -y install libvirt virt-manager qemu-kvm flatpak-builder wlr-randr iotop sysstat lxqt-openssh-askpass lxpolkit parallel just seahorse android-tools iperf3 ktls-utils podman-compose
 
+## build iso
+dnf -y install grub2-efi-x64-cdboot isomd5sum dracut-live squashfs-tools
+
+mkdir -p /etc/dracut.conf.d
+
+cat > /etc/dracut.conf.d/90-live.conf <<'EOF'
+add_dracutmodules+=" dmsquash-live "
+EOF
+
 # User apps
 dnf -y install nautilus kitty mpv gnome-terminal gnome-system-monitor gnome-calculator loupe
 
@@ -119,6 +128,46 @@ glib-compile-schemas /usr/share/glib-2.0/schemas/
 dnf5 install -y openssh-server
 systemctl enable sshd
 
+# Prepare EFI tree required by bootc-generic-iso
+mkdir -p /boot/efi/EFI/fedora
+mkdir -p /boot/efi/EFI/BOOT
+
+SHIM_DIR="$(find /usr/lib/efi/shim -type d -path '*/EFI/fedora' -print -quit)"
+GRUB_DIR="$(find /usr/lib/efi/grub2 -type d -path '*/EFI/fedora' -print -quit)"
+
+if [[ -z "${SHIM_DIR}" ]]; then
+    echo "ERROR: Fedora shim EFI directory not found"
+    exit 1
+fi
+
+if [[ -z "${GRUB_DIR}" ]]; then
+    echo "ERROR: Fedora GRUB EFI directory not found"
+    exit 1
+fi
+
+cp -f "${SHIM_DIR}/shimx64.efi" /boot/efi/EFI/fedora/shimx64.efi
+cp -f "${SHIM_DIR}/mmx64.efi"   /boot/efi/EFI/fedora/mmx64.efi
+
+cp -f "${GRUB_DIR}/grubx64.efi" /boot/efi/EFI/fedora/grubx64.efi
+cp -f "${GRUB_DIR}/gcdx64.efi"  /boot/efi/EFI/fedora/gcdx64.efi
+
+cp -f "${SHIM_DIR}/shimx64.efi" /boot/efi/EFI/BOOT/BOOTX64.EFI
+
+
+for kdir in /usr/lib/modules/*; do
+    [ -d "$kdir" ] || continue
+
+    kver="$(basename "$kdir")"
+
+    if [ -f "$kdir/vmlinuz" ]; then
+        echo "Regenerating initramfs for $kver with dmsquash-live"
+
+        dracut \
+            --force \
+            --kver "$kver" \
+            "$kdir/initramfs.img"
+    fi
+done
 
 ## CLEAN UP
 # Clean up dnf cache to reduce image size

@@ -1,0 +1,8 @@
+{
+  "name": "BaffOS",
+  "imgref": "localhost/baffos:latest",
+  "bootloader": "grub2",
+  "filesystem": "btrfs",
+  "composefs": false,
+  "needs_user_creation": true
+}

@@ -1,0 +1,11 @@
+{
+  "hostname": "baffos",
+  "filesystem": "btrfs",
+  "btrfsSubvolumes": true,
+  "selinuxDisabled": false,
+  "unifiedStorage": true,
+  "composeFsBackend": false,
+  "bootloader": "grub2",
+  "image": "containers-storage:localhost/baffos:latest",
+  "targetImgref": "localhost/baffos:latest"
+}
