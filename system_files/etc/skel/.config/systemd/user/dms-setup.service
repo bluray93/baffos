@@ -1,0 +1,8 @@
+[Unit]
+Description=Create initial DankMaterialShell config
+ConditionPathExists=!%h/.config/niri/dms/binds.kdl
+After=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/dms setup headless --compositor niri --terminal kitty --skip-existing

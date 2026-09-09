@@ -1,6 +1,18 @@
-# image-template
+# BaffOS
 
-This repository is meant to be a template for building your own custom [bootc](https://github.com/bootc-dev/bootc) image. This template is the recommended way to make customizations to any image published by the Universal Blue Project.
+BaffOS is a Universal Blue custom [bootc](https://github.com/bootc-dev/bootc) image derived directly from `ghcr.io/ublue-os/base-main`.
+
+```text
+Universal Blue base-main
+        |
+     BaffOS
+        |-- CachyOS BORE kernel
+        |-- Niri
+        |-- DankMaterialShell
+        `-- BaffOS configuration
+```
+
+BaffOS uses Niri as its Wayland compositor, DankMaterialShell/Quickshell as the desktop shell, greetd with the DMS greeter for login, and the standard CachyOS Fedora kernel package (`kernel-cachyos`) for the BORE desktop kernel. That kernel is x86-64-v3 optimized, so BaffOS targets CPUs with x86-64-v3 support. It does not derive from Bazzite, Silverblue, Kinoite, or `ublue-os/main`.
 
 # Community
 
